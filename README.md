@@ -2,6 +2,8 @@
 
 > Event-driven notification platform — Kafka-powered email delivery and real-time WebSocket push, built with Node.js, Redis, and Socket.IO.
 
+**[View Animated System Demo →](./notification_system_animated.html)**
+
 ## Overview
 
 NotifyFlow is a production-ready microservices system that decouples event producers from notification delivery. When your application fires an event (order placed, password reset, etc.), NotifyFlow asynchronously sends a transactional email **and** pushes a real-time update to the user's browser — with automatic retry on failure.
