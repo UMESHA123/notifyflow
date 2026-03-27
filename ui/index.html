@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Notification System — Test UI</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+  <style>
+    body { font-family: 'Inter', system-ui, sans-serif; background: #0f172a; color: #e2e8f0; }
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; }
+    .input { background: #0f172a; border: 1px solid #334155; color: #e2e8f0; border-radius: 8px; padding: 8px 12px; width: 100%; outline: none; transition: border-color 0.2s; }
+    .input:focus { border-color: #6366f1; }
+    .btn { border-radius: 8px; padding: 8px 16px; font-weight: 600; cursor: pointer; transition: all 0.2s; border: none; }
+    .btn-primary { background: #6366f1; color: white; }
+    .btn-primary:hover { background: #4f46e5; }
+    .btn-primary:disabled { background: #334155; color: #64748b; cursor: not-allowed; }
+    .btn-success { background: #10b981; color: white; }
+    .btn-success:hover { background: #059669; }
+    .btn-success:disabled { background: #334155; color: #64748b; cursor: not-allowed; }
+    .btn-danger { background: #ef4444; color: white; }
+    .btn-danger:hover { background: #dc2626; }
+    .btn-outline { background: transparent; border: 1px solid #334155; color: #94a3b8; }
+    .btn-outline:hover { border-color: #6366f1; color: #6366f1; }
+    .log-entry { border-bottom: 1px solid #1e293b; padding: 10px 14px; animation: fadeIn 0.3s ease; }
+    @keyframes fadeIn { from { opacity:0; transform: translateY(-4px); } to { opacity:1; transform: translateY(0); } }
+    .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
+    .badge-green { background: #064e3b; color: #34d399; }
+    .badge-red { background: #450a0a; color: #f87171; }
+    .badge-blue { background: #1e3a5f; color: #60a5fa; }
+    .badge-yellow { background: #451a03; color: #fbbf24; }
+    .badge-purple { background: #3b0764; color: #c084fc; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .dot-green { background: #34d399; box-shadow: 0 0 6px #34d399; }
+    .dot-red { background: #f87171; }
+    .dot-yellow { background: #fbbf24; animation: pulse 1.5s infinite; }
+    @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.4; } }
+    label { font-size: 12px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: .5px; display: block; margin-bottom: 4px; }
+    .section-title { font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
+  </style>
+</head>
+<body class="min-h-screen p-6">
+
+  <!-- Header -->
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-bold text-white">Notification System</h1>
+      <p class="text-sm text-slate-400 mt-1">Real-time pub-sub test dashboard</p>
+    </div>
+    <div class="flex items-center gap-3">
+      <span class="dot" id="socketDot" style="background:#f87171"></span>
+      <span id="socketStatus" class="text-sm font-semibold text-red-400">Disconnected</span>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-12 gap-5">
+
+    <!-- Left: Connection + Config -->
+    <div class="col-span-12 lg:col-span-3 space-y-4">
+
+      <div class="card p-5">
+        <div class="section-title">WebSocket Connection</div>
+
+        <div class="space-y-3">
+          <div>
+            <label>User ID</label>
+            <input id="userId" class="input" type="text" value="user-123" placeholder="user-123" />
+          </div>
+          <div>
+            <label>Email</label>
+            <input id="userEmail" class="input" type="email" value="test@example.com" />
+          </div>
+          <div>
+            <label>JWT Secret</label>
+            <input id="jwtSecret" class="input" type="text" value="change-me-to-a-long-random-secret" />
+          </div>
+          <div>
+            <label>Socket URL</label>
+            <input id="socketUrl" class="input" type="text" value="http://localhost:3001" />
+          </div>
+          <div class="pt-1 flex gap-2">
+            <button id="connectBtn" class="btn btn-primary flex-1" onclick="connectSocket()">Connect</button>
+            <button id="disconnectBtn" class="btn btn-danger flex-1" onclick="disconnectSocket()" disabled>Disconnect</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card p-5">
+        <div class="section-title">API Gateway</div>
+        <div>
+          <label>API URL</label>
+          <input id="apiUrl" class="input" type="text" value="http://localhost:3000" />
+        </div>
+        <div class="mt-3 text-xs text-slate-500" id="apiStatus">—</div>
+      </div>
+
+      <div class="card p-5">
+        <div class="section-title">Stats</div>
+        <div class="grid grid-cols-2 gap-3 text-center">
+          <div class="bg-slate-900 rounded-lg p-3">
+            <div class="text-2xl font-bold text-indigo-400" id="statSent">0</div>
+            <div class="text-xs text-slate-500 mt-1">Events Sent</div>
+          </div>
+          <div class="bg-slate-900 rounded-lg p-3">
+            <div class="text-2xl font-bold text-emerald-400" id="statReceived">0</div>
+            <div class="text-xs text-slate-500 mt-1">Received</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Center: Event Forms -->
+    <div class="col-span-12 lg:col-span-4 space-y-4">
+
+      <!-- Order Placed -->
+      <div class="card p-5">
+        <div class="flex items-center gap-2 mb-4">
+          <span class="badge badge-blue">Order Placed</span>
+          <span class="text-xs text-slate-500">→ order.placed topic</span>
+        </div>
+
+        <div class="space-y-3">
+          <div>
+            <label>Order ID</label>
+            <input id="orderId" class="input" type="text" value="ORD-001" />
+          </div>
+          <div>
+            <label>Order Total ($)</label>
+            <input id="orderTotal" class="input" type="number" value="99.99" step="0.01" min="0" />
+          </div>
+          <div>
+            <label>Recipient Email</label>
+            <input id="orderEmail" class="input" type="email" placeholder="customer@example.com" />
+          </div>
+          <div>
+            <label>Customer Name (optional)</label>
+            <input id="orderName" class="input" type="text" placeholder="John Doe" />
+          </div>
+          <button id="sendOrderBtn" class="btn btn-success w-full mt-1" onclick="sendOrderEvent()">
+            Send Order Event
+          </button>
+        </div>
+      </div>
+
+      <!-- Password Reset -->
+      <div class="card p-5">
+        <div class="flex items-center gap-2 mb-4">
+          <span class="badge badge-yellow">Password Reset</span>
+          <span class="text-xs text-slate-500">→ password.reset topic</span>
+        </div>
+
+        <div class="space-y-3">
+          <div>
+            <label>Recipient Email</label>
+            <input id="resetEmail" class="input" type="email" placeholder="customer@example.com" />
+          </div>
+          <div>
+            <label>Reset Token</label>
+            <input id="resetToken" class="input" type="text" placeholder="tok_abc123xyz" />
+          </div>
+          <div>
+            <label>Customer Name (optional)</label>
+            <input id="resetName" class="input" type="text" placeholder="John Doe" />
+          </div>
+          <button id="sendResetBtn" class="btn btn-primary w-full mt-1" onclick="sendResetEvent()">
+            Send Reset Event
+          </button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right: Activity Log -->
+    <div class="col-span-12 lg:col-span-5">
+      <div class="card" style="height: 640px; display: flex; flex-direction: column;">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-700">
+          <div class="section-title mb-0">Activity Log</div>
+          <button class="btn btn-outline text-xs py-1 px-3" onclick="clearLog()">Clear</button>
+        </div>
+        <div id="logFeed" class="flex-1 overflow-y-auto" style="font-family: monospace; font-size: 12px;">
+          <div class="text-slate-500 text-center py-16 text-sm" id="emptyLog">
+            No activity yet.<br>Connect and send an event to get started.
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    let socket = null;
+    let sentCount = 0;
+    let receivedCount = 0;
+
+    // ─── JWT (HS256) using Web Crypto API ──────────────────────────────────────
+    function b64url(input) {
+      const bytes = (typeof input === 'string')
+        ? new TextEncoder().encode(input)
+        : input;
+      return btoa(String.fromCharCode(...bytes))
+        .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+    }
+
+    async function makeJWT(payload, secret) {
+      const header = b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+      const body   = b64url(JSON.stringify({ ...payload, iat: Math.floor(Date.now() / 1000) }));
+      const data   = `${header}.${body}`;
+      const key = await crypto.subtle.importKey(
+        'raw', new TextEncoder().encode(secret),
+        { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+      );
+      const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(data));
+      return `${data}.${b64url(new Uint8Array(sig))}`;
+    }
+
+    // ─── Socket.IO ─────────────────────────────────────────────────────────────
+    async function connectSocket() {
+      const userId    = document.getElementById('userId').value.trim();
+      const userEmail = document.getElementById('userEmail').value.trim();
+      const secret    = document.getElementById('jwtSecret').value.trim();
+      const url       = document.getElementById('socketUrl').value.trim();
+
+      if (!userId || !secret) { addLog('error', 'User ID and JWT Secret are required'); return; }
+
+      setStatus('connecting');
+      addLog('info', `Connecting as user:${userId} …`);
+
+      const token = await makeJWT({ userId, email: userEmail }, secret);
+
+      socket = io(url, {
+        auth: { token },
+        transports: ['websocket', 'polling'],
+      });
+
+      socket.on('connect', () => {
+        setStatus('connected');
+        addLog('success', `Connected — socket id: ${socket.id}`);
+      });
+
+      socket.on('authenticated', (data) => {
+        addLog('success', `Authenticated — joined room: ${data.room}`);
+      });
+
+      socket.on('connect_error', (err) => {
+        setStatus('disconnected');
+        addLog('error', `Connection error: ${err.message}`);
+      });
+
+      socket.on('disconnect', (reason) => {
+        setStatus('disconnected');
+        addLog('warn', `Disconnected: ${reason}`);
+      });
+
+      socket.on('order:confirmed', (data) => {
+        receivedCount++;
+        document.getElementById('statReceived').textContent = receivedCount;
+        addLog('order', `Order confirmed — #${data.orderId} ($${data.orderTotal})`, data);
+      });
+
+      socket.on('auth:password-reset-requested', (data) => {
+        receivedCount++;
+        document.getElementById('statReceived').textContent = receivedCount;
+        addLog('reset', `Password reset requested — user: ${data.userId}`, data);
+      });
+
+      socket.on('subscribe:success', (d) => addLog('info', `Subscribed to room: ${d.room}`));
+      socket.on('subscribe:error',   (d) => addLog('error', `Subscribe error: ${d.message}`));
+    }
+
+    function disconnectSocket() {
+      if (socket) { socket.disconnect(); socket = null; }
+      setStatus('disconnected');
+    }
+
+    // ─── API Calls ─────────────────────────────────────────────────────────────
+    async function sendOrderEvent() {
+      const apiUrl     = document.getElementById('apiUrl').value.trim();
+      const userId     = document.getElementById('userId').value.trim();
+      const orderId    = document.getElementById('orderId').value.trim();
+      const orderTotal = parseFloat(document.getElementById('orderTotal').value);
+      const email      = document.getElementById('orderEmail').value.trim();
+      const name       = document.getElementById('orderName').value.trim();
+
+      if (!orderId || !email) { addLog('error', 'Order ID and email are required'); return; }
+      if (isNaN(orderTotal) || orderTotal < 0) { addLog('error', 'Order total must be a positive number'); return; }
+
+      try {
+        addLog('info', `Sending order event — #${orderId} ($${orderTotal}) to ${email}`);
+        const res = await fetch(`${apiUrl}/api/v1/events/order-placed`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId, orderId, orderTotal, email, name: name || undefined }),
+        });
+        const data = await res.json();
+        sentCount++;
+        document.getElementById('statSent').textContent = sentCount;
+        if (res.ok) {
+          addLog('success', `Accepted — eventId: ${data.eventId}`);
+          document.getElementById('apiStatus').textContent = '✓ Last request: 202 Accepted';
+          document.getElementById('apiStatus').className = 'mt-3 text-xs text-emerald-400';
+        } else {
+          addLog('error', `API Error ${res.status}: ${data.message || JSON.stringify(data)}`);
+        }
+      } catch (err) {
+        addLog('error', `Fetch failed: ${err.message}`);
+      }
+    }
+
+    async function sendResetEvent() {
+      const apiUrl     = document.getElementById('apiUrl').value.trim();
+      const userId     = document.getElementById('userId').value.trim();
+      const email      = document.getElementById('resetEmail').value.trim();
+      const resetToken = document.getElementById('resetToken').value.trim();
+      const name       = document.getElementById('resetName').value.trim();
+
+      if (!email || !resetToken) { addLog('error', 'Email and reset token are required'); return; }
+
+      try {
+        addLog('info', `Sending password reset event for ${email}`);
+        const res = await fetch(`${apiUrl}/api/v1/events/password-reset`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId, email, resetToken, name: name || undefined }),
+        });
+        const data = await res.json();
+        sentCount++;
+        document.getElementById('statSent').textContent = sentCount;
+        if (res.ok) {
+          addLog('success', `Accepted — eventId: ${data.eventId}`);
+          document.getElementById('apiStatus').textContent = '✓ Last request: 202 Accepted';
+          document.getElementById('apiStatus').className = 'mt-3 text-xs text-emerald-400';
+        } else {
+          addLog('error', `API Error ${res.status}: ${data.message || JSON.stringify(data)}`);
+        }
+      } catch (err) {
+        addLog('error', `Fetch failed: ${err.message}`);
+      }
+    }
+
+    // ─── UI Helpers ────────────────────────────────────────────────────────────
+    function setStatus(state) {
+      const dot = document.getElementById('socketDot');
+      const txt = document.getElementById('socketStatus');
+      const connectBtn    = document.getElementById('connectBtn');
+      const disconnectBtn = document.getElementById('disconnectBtn');
+
+      const states = {
+        connected:    { color: '#34d399', text: 'Connected',    textClass: 'text-emerald-400' },
+        connecting:   { color: '#fbbf24', text: 'Connecting…',  textClass: 'text-yellow-400' },
+        disconnected: { color: '#f87171', text: 'Disconnected', textClass: 'text-red-400' },
+      };
+      const s = states[state];
+      dot.style.background = s.color;
+      dot.style.boxShadow = state === 'connected' ? `0 0 6px ${s.color}` : 'none';
+      txt.textContent = s.text;
+      txt.className = `text-sm font-semibold ${s.textClass}`;
+
+      connectBtn.disabled    = state !== 'disconnected';
+      disconnectBtn.disabled = state === 'disconnected';
+    }
+
+    function addLog(type, message, data) {
+      document.getElementById('emptyLog')?.remove();
+
+      const feed = document.getElementById('logFeed');
+      const now  = new Date().toLocaleTimeString();
+
+      const typeMap = {
+        success: { badge: 'badge-green',  label: 'OK'      },
+        error:   { badge: 'badge-red',    label: 'ERROR'   },
+        info:    { badge: 'badge-blue',   label: 'INFO'    },
+        warn:    { badge: 'badge-yellow', label: 'WARN'    },
+        order:   { badge: 'badge-green',  label: '⚡ ORDER' },
+        reset:   { badge: 'badge-purple', label: '🔑 RESET' },
+      };
+      const t = typeMap[type] || typeMap.info;
+
+      const entry = document.createElement('div');
+      entry.className = 'log-entry';
+      entry.innerHTML = `
+        <div class="flex items-start gap-2">
+          <span class="text-slate-500 shrink-0 mt-0.5">${now}</span>
+          <span class="badge ${t.badge} shrink-0">${t.label}</span>
+          <span class="text-slate-300 break-all">${message}</span>
+        </div>
+        ${data ? `<pre class="mt-1 ml-24 text-slate-500 text-xs overflow-x-auto">${JSON.stringify(data, null, 2)}</pre>` : ''}
+      `;
+
+      feed.prepend(entry);
+    }
+
+    function clearLog() {
+      document.getElementById('logFeed').innerHTML =
+        '<div class="text-slate-500 text-center py-16 text-sm" id="emptyLog">Log cleared.</div>';
+    }
+
+    // Auto-generate a reset token on load
+    document.getElementById('resetToken').value = 'tok_' + Math.random().toString(36).slice(2, 14);
+  </script>
+</body>
+</html>
